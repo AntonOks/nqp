@@ -1,0 +1,110 @@
+name: Build NQP Releases
+
+# Create triggers the workflow on new tag's or branches
+on:
+  create: #[push, create, workflow_dispatch]
+    tags:
+    - 2[0-9]+.[0-1][0-1]'**'
+  # workflow_dispatch:
+
+jobs:
+  build_POSIX_NQP:
+    # Check https://github.com/actions/runner-images#available-images for available GihHub runners
+    strategy:
+      matrix:
+        posix-os: [ubuntu-22.04, ubuntu-20.04, macos-12, macos-13]
+
+    runs-on: ${{ matrix.posix-os }}
+    if: github.event.ref_type == 'tag'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: 'true'
+          ref: ${{ github.event.ref }}
+
+      - name: Run "perl Configure.pl"
+        run: perl Configure.pl --backends=moar --prefix NQP.${{matrix.posix-os}} --make-install --relocatable
+
+      - name: Run "make install"
+        run: make -j2 install
+
+      - name: Create TAR.GZ file
+        run: tar -cvzf NQP.${{matrix.posix-os}}.tar.gz NQP.${{matrix.posix-os}}
+
+      - name: List my stuff
+        run: ls -l NQP.${{matrix.posix-os}}.tar.gz
+
+      - name: Upload NQP ${{matrix.posix-os}} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NQP.${{matrix.posix-os}}
+          path: NQP.${{matrix.posix-os}}.tar.gz
+          if-no-files-found: error
+
+
+  build_Windows_NQP:
+    strategy:
+      matrix:
+        windows-os: [windows-2022, windows-2019]
+
+    runs-on: ${{ matrix.windows-os }}
+    if: github.event.ref_type == 'tag'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: 'true'
+          ref: ${{ github.event.ref }}
+
+      - name: Setup VS Dev Environment
+        uses: compnerd/gha-setup-vsdevenv@v6
+
+      - name: Run "perl Configure.pl"
+        run: perl Configure.pl --backends=moar --moar-option='--toolchain=msvc,--compiler=cl' --prefix NQP.${{matrix.windows-os}} --make-install --relocatable
+
+      - name: Run "nmake install"
+        run: |
+          set CL=/MP
+          nmake install
+
+      - name: Create TAR.GZ file
+        run: tar -cvzf NQP.${{matrix.windows-os}}.tar.gz NQP.${{matrix.windows-os}}
+
+      - name: List my stuff
+        run: Get-ChildItem NQP.${{matrix.windows-os}}.tar.gz
+
+      - name: Upload NQP ${{matrix.windows-os}} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NQP.${{matrix.windows-os}}
+          path: NQP.${{matrix.windows-os}}.tar.gz
+          if-no-files-found: error
+
+
+  release_NQP_artifacts:
+    needs: [build_POSIX_NQP, build_Windows_NQP]
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - uses: actions/download-artifact@v4
+      with:
+        path: NQP_artifacts
+
+    - name: List my stuff
+      run: ls -lAR
+
+    - name: Release NQP releases
+      uses: ncipollo/release-action@v1
+      with:
+        # ncipollo/release-action needs a tag! Either a usual "GIT TAG" or an dedicated TAG, see below!
+        #tag: 2024.02 # set a TAG if you want a release to be build on GitHub _BUT_ do not provide a GIT TAG
+        draft: false
+        allowUpdates: true
+        artifactErrorsFailBuild: true
+        artifacts: "NQP_artifacts/NQP*/NQP*"
+        token: ${{ secrets.GITHUB_TOKEN }}
+
