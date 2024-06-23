@@ -25,7 +25,7 @@ jobs:
           ref: ${{ github.event.ref }}
 
       - name: Run "perl Configure.pl"
-        run: perl Configure.pl --backends=moar --prefix NQP.${{matrix.posix-os}} --make-install --relocatable
+        run: perl Configure.pl --gen-moar --backends=moar --prefix NQP.${{matrix.posix-os}} --make-install --relocatable
 
       - name: Run "make install"
         run: make -j2 install
@@ -63,7 +63,7 @@ jobs:
         uses: compnerd/gha-setup-vsdevenv@v6
 
       - name: Run "perl Configure.pl"
-        run: perl Configure.pl --backends=moar --moar-option='--toolchain=msvc,--compiler=cl' --prefix NQP.${{matrix.windows-os}} --make-install --relocatable
+        run: perl Configure.pl --gen-moar --backends=moar --moar-option='--toolchain=msvc,--compiler=cl' --prefix NQP.${{matrix.windows-os}} --make-install --relocatable
 
       - name: Run "nmake install"
         run: |
