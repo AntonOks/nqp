@@ -475,10 +475,7 @@ public class P6Opaque extends REPR {
                 isInitVisitor.visitLabel(isInitLabels[i]);
                 isInitVisitor.visitVarInsn(Opcodes.ALOAD, 0);
                 isInitVisitor.visitFieldInsn(Opcodes.GETFIELD, className, field, desc);
-                isInitVisitor.visitMethodInsn(Opcodes.INVOKESTATIC, "org/raku/nqp/runtime/Ops", "isnull", "(Lorg/raku/nqp/sixmodel/SixModelObject;)J");
-                isInitVisitor.visitInsn(Opcodes.LCONST_1);
-                isInitVisitor.visitInsn(Opcodes.LCMP);
-                isInitVisitor.visitJumpInsn(Opcodes.IFEQ, isInitNull);
+                isInitVisitor.visitJumpInsn(Opcodes.IFNULL, isInitNull);
                 isInitVisitor.visitInsn(Opcodes.ICONST_1);
                 isInitVisitor.visitInsn(Opcodes.I2L);
                 isInitVisitor.visitInsn(Opcodes.LRETURN);
@@ -826,7 +823,7 @@ public class P6Opaque extends REPR {
                     i == REPRData.unboxStrSlot || i == REPRData.unboxObjSlot;
             info.posDelegate = i == REPRData.posDelSlot;
             info.assDelegate = i == REPRData.assDelSlot;
-            info.hasAutoVivContainer = REPRData.autoVivContainers[i] != null;
+            info.hasAutoVivContainer = Ops.isnull(REPRData.autoVivContainers[i]) == 0;
             attrInfoList.add(info);
         }
         if (numAttributes > 0) {
