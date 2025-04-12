@@ -374,6 +374,12 @@ my class MASTCompilerInstance {
         $!file := nqp::ifnull(nqp::getlexdyn('$?FILES'), "<unknown file>");
         $!sc := NQPMu;
 
+        # Blocks we've seen while compiling.
+        my %*BLOCKS_DONE;
+
+        # Make sure $*BLOCK is clear.
+        my $*BLOCK;
+
         # Compile, and evaluate to compilation unit.
         self.as_mast($qast);
 
@@ -795,11 +801,7 @@ my class MASTCompilerInstance {
             $!sc := $cu.sc;
         }
 
-        # Blocks we've seen while compiling.
-        my %*BLOCKS_DONE;
-
-        # Compile the block; make sure $*BLOCK is clear.
-        my $*BLOCK;
+        # Compile the block
         self.as_mast($cu[0]);
 
         # If we are in compilation mode, or have pre-deserialization or
@@ -1453,6 +1455,7 @@ my class MASTCompilerInstance {
         my $final_stmt_idx := +@stmts - 1;
         my $WANT := $*WANT;
         my $all_void := nqp::defined($WANT) && $WANT == nqp::const::MVM_reg_void;
+        my $regalloc := $!regalloc;
         for @stmts {
             my int $use_result := 0;
             # Compile this child to MAST, and add its instructions to the end
@@ -1481,12 +1484,13 @@ my class MASTCompilerInstance {
             }
             else {
                 # release top-level results (since they can't be used by anything anyway)
-                $!regalloc.release_register($last_stmt.result_reg, nqp::unbox_i($last_stmt.result_kind));
+                $regalloc.release_register($last_stmt.result_reg, nqp::unbox_i($last_stmt.result_kind));
             }
             $result_count++;
         }
-        if $result_stmt && nqp::unbox_i($result_stmt.result_kind) != nqp::const::MVM_reg_void {
-            MAST::InstructionList.new($result_stmt.result_reg, nqp::unbox_i($result_stmt.result_kind));
+        my int $result_kind;
+        if $result_stmt && ($result_kind := nqp::unbox_i($result_stmt.result_kind)) != nqp::const::MVM_reg_void {
+            MAST::InstructionList.new($result_stmt.result_reg, $result_kind);
         }
         else {
             MAST::InstructionList.new(MAST::VOID, nqp::const::MVM_reg_void);
@@ -2338,25 +2342,27 @@ class MoarVM::Callsites {
 
         $!latin1decoder.add-bytes($identifier); # just turn the buf into a str without real interpretation
         my str $identifier_s := $!latin1decoder.consume-all-chars;
-        if nqp::existskey(%!callsites, $identifier_s) {
-            return %!callsites{$identifier_s};
+        my %callsites := %!callsites;
+        if nqp::existskey(%callsites, $identifier_s) {
+            return %callsites{$identifier_s};
         }
 
-        my $callsite-idx := nqp::elems(%!callsites);
-        %!callsites{$identifier_s} := $callsite-idx;
-        my uint $callsites_offset := nqp::elems($!callsites);
-        nqp::writeuint($!callsites, $callsites_offset, $elems, 5);
+        my $callsite-idx := nqp::elems(%callsites);
+        %callsites{$identifier_s} := $callsite-idx;
+        my $callsites := $!callsites;
+        my uint $callsites_offset := nqp::elems($callsites);
+        nqp::writeuint($callsites, $callsites_offset, $elems, 5);
         $callsites_offset := $callsites_offset + 2;
         my $iter := nqp::iterator(@flags);
         while $iter {
-            nqp::writeuint($!callsites, $callsites_offset++, nqp::shift_i($iter), 1);
+            nqp::writeuint($callsites, $callsites_offset++, nqp::shift_i($iter), 1);
         }
         if $elems +& 1 {
-            nqp::writeuint($!callsites, $callsites_offset++, 0, 1);
+            nqp::writeuint($callsites, $callsites_offset++, 0, 1);
         }
         $iter := nqp::iterator(@named_idxs);
         while $iter {
-            nqp::writeuint($!callsites, $callsites_offset, nqp::shift_i($iter), 9);
+            nqp::writeuint($callsites, $callsites_offset, nqp::shift_i($iter), 9);
             $callsites_offset := $callsites_offset + 4;
         }
         $callsite-idx
@@ -2847,8 +2853,8 @@ class MoarVM::BytecodeWriter {
     }
     method get_frame_index(MAST::Frame $f) {
         my int $idx := 0;
-        if nqp::getattr($f, MAST::Frame, '$!flags') +& 32768 { # FRAME_FLAG_HAS_INDEX
-            return nqp::getattr($f, MAST::Frame, '$!frame_idx');
+        if nqp::getattr_i($f, MAST::Frame, '$!flags') +& 32768 { # FRAME_FLAG_HAS_INDEX
+            return nqp::getattr_i($f, MAST::Frame, '$!frame_idx');
         }
         my str $fid := nqp::objectid($f);
         for nqp::getattr($!compunit, MAST::CompUnit, '@!frames') {
