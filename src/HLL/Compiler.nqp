@@ -13,6 +13,7 @@ class HLL::Compiler does HLL::Backend::Default {
     has %!cli-options;
     has $!backend;
     has $!save_ctx;
+    has $!repl-mode;
 
     method BUILD() {
         # Backend is set to the default one, by default.
@@ -68,7 +69,7 @@ class HLL::Compiler does HLL::Backend::Default {
         $!save_ctx # XXX starting value?
     }
 
-    method interactive(*%adverbs) {
+    method interactive(*@args, *%adverbs) {
         stderr().print(self.interactive_banner);
 
         my $stdin    := stdin();
@@ -318,21 +319,23 @@ class HLL::Compiler does HLL::Backend::Default {
                         self.dumper($result, $target, |%adverbs);
                     }
                 }
+                elsif %adverbs<repl-mode> -> $repl-mode {
+                    my $!repl-mode := $repl-mode;
+                    my $is-interactive := ($repl-mode eq 'interactive' || $repl-mode eq 'process' || $repl-mode eq 'tty')
+                      ?? 1
+                      !! ($repl-mode eq 'non-interactive' || $repl-mode eq 'disabled')
+                        ?? 0
+                        !! self.panic("Unknown REPL mode '$repl-mode'. Valid values are 'tty', 'process', and 'disabled'");
+                    $result := $is-interactive
+                      ?? self.interactive(|@a, |%adverbs)
+                      !! self.evalfiles('-', |%adverbs);
+                }
                 elsif !@a || (@a == 1 && @a[0] eq '-')  {
-                    # Is STDIN a TTY display? If so, start the REPL, otherwise, simply
-                    # assume the program to eval is given on STDIN.
-                    my $force := %adverbs<repl-mode>//'';
-                    my $wants-interactive := $force
-                        ?? $force eq 'interactive'
-                          ?? 1 !! $force eq 'non-interactive'
-                            ?? 0 !! self.panic(
-                                "Unknown REPL mode '$force'. Valid values"
-                                ~ " are 'non-interactive' and 'interactive'"
-                            )
-                        !! stdin().t();
-                    $result := $wants-interactive
-                        ?? self.interactive(|%adverbs)
-                        !! self.evalfiles('-', |%adverbs);
+                    # Is STDIN a TTY display? If so, start the REPL, otherwise,
+                    # simply assume the program to eval is given on STDIN.
+                    $result := stdin().t()
+                      ?? self.interactive(|@a, |%adverbs)
+                      !! self.evalfiles('-', |%adverbs);
                 }
                 elsif %adverbs<combine> { $result := self.evalfiles(@a, |%adverbs) }
                 else { $result := self.evalfiles(@a[0], |@a, |%adverbs) }
@@ -813,6 +816,11 @@ class HLL::Compiler does HLL::Backend::Default {
 
     method supports-op($opname) {
         self.backend.supports-op($opname)
+    }
+
+    method repl-mode() {
+        my $default := stdin().t() ?? 'tty' !! 'process';
+        $!repl-mode // $default
     }
 }
 

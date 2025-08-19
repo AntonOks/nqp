@@ -374,6 +374,12 @@ my class MASTCompilerInstance {
         $!file := nqp::ifnull(nqp::getlexdyn('$?FILES'), "<unknown file>");
         $!sc := NQPMu;
 
+        # Blocks we've seen while compiling.
+        my %*BLOCKS_DONE;
+
+        # Make sure $*BLOCK is clear.
+        my $*BLOCK;
+
         # Compile, and evaluate to compilation unit.
         self.as_mast($qast);
 
@@ -795,11 +801,7 @@ my class MASTCompilerInstance {
             $!sc := $cu.sc;
         }
 
-        # Blocks we've seen while compiling.
-        my %*BLOCKS_DONE;
-
-        # Compile the block; make sure $*BLOCK is clear.
-        my $*BLOCK;
+        # Compile the block
         self.as_mast($cu[0]);
 
         # If we are in compilation mode, or have pre-deserialization or
@@ -1406,10 +1408,11 @@ my class MASTCompilerInstance {
         self.compile_annotation($node);
         my %stmt_temps := nqp::clone(%*STMTTEMPS); # guaranteed to be initialized
         my $result     := self.compile_with_stmt_temps($node, %stmt_temps);
+        my $block      := $*BLOCK;
         for sorted_keys(%stmt_temps) -> $temp_key {
-            if !nqp::existskey(%*STMTTEMPS, $temp_key) &&
-                    !nqp::eqaddr($*BLOCK.local($temp_key), $result.result_reg) {
-                $*BLOCK.release_temp($temp_key);
+            unless nqp::existskey(%stmt_temps, $temp_key)
+              || nqp::eqaddr($block.local($temp_key), $result.result_reg) {
+                $block.release_temp($temp_key);
             }
         }
         $result
@@ -1453,6 +1456,7 @@ my class MASTCompilerInstance {
         my $final_stmt_idx := +@stmts - 1;
         my $WANT := $*WANT;
         my $all_void := nqp::defined($WANT) && $WANT == nqp::const::MVM_reg_void;
+        my $regalloc := $!regalloc;
         for @stmts {
             my int $use_result := 0;
             # Compile this child to MAST, and add its instructions to the end
@@ -1481,12 +1485,13 @@ my class MASTCompilerInstance {
             }
             else {
                 # release top-level results (since they can't be used by anything anyway)
-                $!regalloc.release_register($last_stmt.result_reg, nqp::unbox_i($last_stmt.result_kind));
+                $regalloc.release_register($last_stmt.result_reg, nqp::unbox_i($last_stmt.result_kind));
             }
             $result_count++;
         }
-        if $result_stmt && nqp::unbox_i($result_stmt.result_kind) != nqp::const::MVM_reg_void {
-            MAST::InstructionList.new($result_stmt.result_reg, nqp::unbox_i($result_stmt.result_kind));
+        my int $result_kind;
+        if $result_stmt && ($result_kind := nqp::unbox_i($result_stmt.result_kind)) != nqp::const::MVM_reg_void {
+            MAST::InstructionList.new($result_stmt.result_reg, $result_kind);
         }
         else {
             MAST::InstructionList.new(MAST::VOID, nqp::const::MVM_reg_void);
@@ -2338,25 +2343,27 @@ class MoarVM::Callsites {
 
         $!latin1decoder.add-bytes($identifier); # just turn the buf into a str without real interpretation
         my str $identifier_s := $!latin1decoder.consume-all-chars;
-        if nqp::existskey(%!callsites, $identifier_s) {
-            return %!callsites{$identifier_s};
+        my %callsites := %!callsites;
+        if nqp::existskey(%callsites, $identifier_s) {
+            return %callsites{$identifier_s};
         }
 
-        my $callsite-idx := nqp::elems(%!callsites);
-        %!callsites{$identifier_s} := $callsite-idx;
-        my uint $callsites_offset := nqp::elems($!callsites);
-        nqp::writeuint($!callsites, $callsites_offset, $elems, 5);
+        my $callsite-idx := nqp::elems(%callsites);
+        %callsites{$identifier_s} := $callsite-idx;
+        my $callsites := $!callsites;
+        my uint $callsites_offset := nqp::elems($callsites);
+        nqp::writeuint($callsites, $callsites_offset, $elems, 5);
         $callsites_offset := $callsites_offset + 2;
         my $iter := nqp::iterator(@flags);
         while $iter {
-            nqp::writeuint($!callsites, $callsites_offset++, nqp::shift_i($iter), 1);
+            nqp::writeuint($callsites, $callsites_offset++, nqp::shift_i($iter), 1);
         }
         if $elems +& 1 {
-            nqp::writeuint($!callsites, $callsites_offset++, 0, 1);
+            nqp::writeuint($callsites, $callsites_offset++, 0, 1);
         }
         $iter := nqp::iterator(@named_idxs);
         while $iter {
-            nqp::writeuint($!callsites, $callsites_offset, nqp::shift_i($iter), 9);
+            nqp::writeuint($callsites, $callsites_offset, nqp::shift_i($iter), 9);
             $callsites_offset := $callsites_offset + 4;
         }
         $callsite-idx
@@ -2509,30 +2516,37 @@ class MoarVM::BytecodeWriter {
         $!mbc.write_uint32($offset); # Offset of SC dependencies table
         $!mbc.write_uint32(my uint $num_sc_handles := nqp::elems(@sc_handles)); # Number of entries in SC dependencies table
         $offset := $offset + $sc_deps_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $sc_deps_size;
 
         $!mbc.write_uint32($offset); # Offset of extension ops table
         $!mbc.write_uint32($num_extops); # Number of entries in extension ops table
         $offset := $offset + $extops_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $extops_size;
 
         $!mbc.write_uint32($offset); # Offset of frames segment
         $!mbc.write_uint32(my uint $num_frames := nqp::elems(@!frames)); # Number of frames
         $offset := $offset + $frames_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $frames_size;
 
         $!mbc.write_uint32($offset); # Offset of callsites segment
         $!mbc.write_uint32(my uint $num_callsites := $!callsites.elems); # Number of callsites
         $offset := $offset + $callsites_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $callsites_size;
 
         $!mbc.write_uint32($offset); # Offset of strings heap
         $!mbc.write_uint32(my uint $num_strings := $!string-heap.elems); # Number of strings in heap
         $offset := $offset + $string_heap_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $string_heap_size;
 
         $!mbc.write_uint32($offset); # Offset of SC data segment
         $!mbc.write_uint32($serialized_size); # Number of entries in SC data segment
         $offset := $offset + $serialized_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $serialized_size;
 
         $!mbc.write_uint32($offset); # Offset of bytecode segment
         $!mbc.write_uint32(my uint $num_bytecode := ($!bytecode_size || nqp::elems($!bytecode))); # Length of bytecode segment
         $offset := $offset + $bytecode_size;
+        nqp::die("MAST::CompUnit file size limit reached!") if $offset < $bytecode_size;
 
         $!mbc.write_uint32($offset); # Offset of annotation segment
         $!mbc.write_uint32($annotations_size); # Length of annotation segment
@@ -2608,6 +2622,13 @@ class MoarVM::BytecodeWriter {
         add_uint32((my $num_lexical_types := nqp::elems(@lexical_types))); # Number of lexicals
         add_uint32($f.cuuid-idx); # Compilation unit unique ID (string heap index)
         add_uint32($f.name-idx); # Name (string heap index)
+
+        if nqp::elems(@local_types) >= 0xffff {
+            nqp::die("Too many local variables in MAST::Frame. Up to 65534 are allowed. This frame (" ~ $f.name ~ ") has " ~ nqp::elems(@local_types));
+        }
+        if $num_lexical_types >= 0xffff {
+            nqp::die("Too many lexical variables in MAST::Frame. Up to 65534 are allowed. This frame (" ~ $f.name ~ ") has " ~ $num_lexical_types);
+        }
 
         my $outer := $f.outer;
         if nqp::defined($outer) {
@@ -2761,6 +2782,10 @@ class MoarVM::BytecodeWriter {
         self.align;
         self.write_extops;
         self.align;
+
+        nqp::die("Too many MAST::Frames in CompUnit. Up to 65534 are allowed, but this CU has has " ~ nqp::elems(@!frames))
+            if nqp::elems(@!frames) >= 0xffff;
+
         my uint $idx := 0;
         for @!frames {
             self.write_frame($_, $idx++);
@@ -2829,8 +2854,8 @@ class MoarVM::BytecodeWriter {
     }
     method get_frame_index(MAST::Frame $f) {
         my int $idx := 0;
-        if nqp::getattr($f, MAST::Frame, '$!flags') +& 32768 { # FRAME_FLAG_HAS_INDEX
-            return nqp::getattr($f, MAST::Frame, '$!frame_idx');
+        if nqp::getattr_i($f, MAST::Frame, '$!flags') +& 32768 { # FRAME_FLAG_HAS_INDEX
+            return nqp::getattr_i($f, MAST::Frame, '$!frame_idx');
         }
         my str $fid := nqp::objectid($f);
         for nqp::getattr($!compunit, MAST::CompUnit, '@!frames') {
