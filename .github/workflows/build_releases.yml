@@ -8,15 +8,29 @@ on:
   # workflow_dispatch:
 
 jobs:
+  
+  get_MoarVM_version:
+    runs-on: ubuntu-latest
+    if: github.event.ref_type == 'tag'
+
+    steps:
+      - name: Get the latest MoarVM release info
+        id: moarvm_v
+        run: |
+          echo ::set-output name=moarvm_v::$(curl -v --stderr - https://github.com/MoarVM/MoarVM/releases/latest | grep -i "location: " | grep -Po "(\d+\.\d+)(\\.[0-9]+)?")
+          
+      - name: Show found MoarVM version
+        run: |
+          echo "MoarVM latest is: ${{ steps.moarvm_v.moarvm_v }}"
+  
   build_POSIX_NQP:
     # Check https://github.com/actions/runner-images#available-images for available GihHub runners
     strategy:
       matrix:
-        posix-os: [ubuntu-22.04, ubuntu-20.04, macos-12, macos-13]
+        posix-os: [ubuntu-22.04, ubuntu-24.04, macos-13, macos-14-large, macos-15-large]
 
+    needs: [get_MoarVM_version]
     runs-on: ${{ matrix.posix-os }}
-    if: github.event.ref_type == 'tag'
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,8 +38,17 @@ jobs:
           fetch-tags: 'true'
           ref: ${{ github.event.ref }}
 
+      - name: Get and extract MoarVM
+        run: |
+          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.moarvm_v }}/MoarVM-${{ steps.moarvm_v.moarvm_v }}.tar.gz -o MoarVM.tar.gz
+          tar -xvzf MoarVM.tar.gz
+          mv MoarVM* MoarVM
+          
+      - name: List my stuff
+        run: ls -lAR
+      
       - name: Run "perl Configure.pl"
-        run: perl Configure.pl --gen-moar --backends=moar --prefix NQP.${{matrix.posix-os}} --make-install --relocatable
+        run: perl Configure.pl --with-moar=MoarVM --backends=moar --prefix NQP.${{matrix.posix-os}} --make-install --relocatable
 
       - name: Run "make install"
         run: make -j2 install
@@ -43,15 +66,13 @@ jobs:
           path: NQP.${{matrix.posix-os}}.tar.gz
           if-no-files-found: error
 
-
   build_Windows_NQP:
     strategy:
       matrix:
-        windows-os: [windows-2022, windows-2019]
+        windows-os: [windows-2022, windows-2025]
 
+    needs: [get_MoarVM_version]
     runs-on: ${{ matrix.windows-os }}
-    if: github.event.ref_type == 'tag'
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -62,8 +83,17 @@ jobs:
       - name: Setup VS Dev Environment
         uses: compnerd/gha-setup-vsdevenv@v6
 
+      - name: Get and extract MoarVM
+        run: |
+          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.moarvm_v }}/MoarVM-${{ steps.moarvm_v.moarvm_v }}.tar.gz -o MoarVM.tar.gz
+          tar -xvzf MoarVM*
+          mv MoarVM* MoarVM
+          
+      - name: List my stuff
+        run: Get-ChildItem MoarVM*
+        
       - name: Run "perl Configure.pl"
-        run: perl Configure.pl --gen-moar --backends=moar --moar-option='--toolchain msvc' --prefix NQP.${{matrix.windows-os}} --make-install --relocatable
+        run: perl Configure.pl --with-moar=MoarVM --backends=moar --moar-option='--toolchain msvc' --prefix NQP.${{matrix.windows-os}} --make-install --relocatable
 
       - name: Run "nmake install"
         run: |
