@@ -27,7 +27,7 @@ jobs:
     # Check https://github.com/actions/runner-images#available-images for available GihHub runners
     strategy:
       matrix:
-        posix-os: [ubuntu-22.04, ubuntu-24.04, macos-13, macos-14-large, macos-15-large]
+        posix-os: [ubuntu-22.04, ubuntu-24.04, macos-13]
 
     needs: [get_MoarVM_version]
     runs-on: ${{ matrix.posix-os }}
