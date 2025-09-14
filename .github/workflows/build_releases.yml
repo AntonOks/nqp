@@ -25,7 +25,7 @@ jobs:
             exit 666
           fi
           echo "MoarVM latest is: $MOARVM_LATEST"
-          MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_OUTPUT"
+          MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_STATE"
           
       - name: Show found MoarVM version
         run: |
