@@ -25,11 +25,11 @@ jobs:
             exit 666
           fi
           echo "MoarVM latest is: $MOARVM_LATEST"
-          MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_STATE"
+          MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_ENV"
           
       - name: Show found MoarVM version
         run: |
-          echo "MoarVM latest is: ${{ steps.moarvm_v.MOARVM_LATEST }}"
+          echo "MoarVM latest is: ${{ env.MOARVM_LATEST }}"
   
   build_POSIX_NQP:
     # Check https://github.com/actions/runner-images#available-images for available GihHub runners
