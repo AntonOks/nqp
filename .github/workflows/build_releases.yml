@@ -17,11 +17,18 @@ jobs:
       - name: Get the latest MoarVM release info
         id: moarvm_v
         run: |
-          echo ::set-output name=moarvm_v::$(curl -v --stderr - https://github.com/MoarVM/MoarVM/releases/latest | grep -i "location: " | grep -Po "(\d+\.\d+)(\\.[0-9]+)?")
+          # echo ::set-output name=moarvm_v::$(curl -v --stderr - https://github.com/MoarVM/MoarVM/releases/latest | grep -i "location: " | grep -Po "(\d+\.\d+)(\\.[0-9]+)?")
+          MOARVM_LATEST=$(curl -v --stderr - https://github.com/MoarVM/MoarVM/releases/latest | grep -i "location: " | grep -Po "(\d+\.\d+)(\\.[0-9]+)?")
+          if [[ $MOARVM_LATEST == "" ]]
+          then
+            echo "ERROR: No MoarVM \"latest\" found at \"https://github.com/MoarVM/MoarVM/releases/latest\", please check!"
+            exit 666
+          fi
+          MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_OUTPUT"
           
       - name: Show found MoarVM version
         run: |
-          echo "MoarVM latest is: ${{ steps.moarvm_v.moarvm_v }}"
+          echo "MoarVM latest is: ${{ steps.moarvm_v.MOARVM_LATEST }}"
   
   build_POSIX_NQP:
     # Check https://github.com/actions/runner-images#available-images for available GihHub runners
@@ -40,7 +47,7 @@ jobs:
 
       - name: Get and extract MoarVM
         run: |
-          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.moarvm_v }}/MoarVM-${{ steps.moarvm_v.moarvm_v }}.tar.gz -o MoarVM.tar.gz
+          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.MOARVM_LATEST }}/MoarVM-${{ steps.moarvm_v.MOARVM_LATEST }}.tar.gz -o MoarVM.tar.gz
           tar -xvzf MoarVM.tar.gz
           mv MoarVM* MoarVM
           
@@ -85,7 +92,7 @@ jobs:
 
       - name: Get and extract MoarVM
         run: |
-          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.moarvm_v }}/MoarVM-${{ steps.moarvm_v.moarvm_v }}.tar.gz -o MoarVM.tar.gz
+          curl -sL https://github.com/MoarVM/MoarVM/releases/download/${{ steps.moarvm_v.MOARVM_LATEST }}/MoarVM-${{ steps.moarvm_v.MOARVM_LATEST }}.tar.gz -o MoarVM.tar.gz
           tar -xvzf MoarVM*
           mv MoarVM* MoarVM
           
@@ -119,7 +126,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
     - uses: actions/download-artifact@v4
       with:
         path: NQP_artifacts
