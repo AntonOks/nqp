@@ -24,6 +24,7 @@ jobs:
             echo "ERROR: No MoarVM \"latest\" found at \"https://github.com/MoarVM/MoarVM/releases/latest\", please check!"
             exit 666
           fi
+          echo "MoarVM latest is: $MOARVM_LATEST"
           MOARVM_LATEST=$MOARVM_LATEST >> "$GITHUB_OUTPUT"
           
       - name: Show found MoarVM version
